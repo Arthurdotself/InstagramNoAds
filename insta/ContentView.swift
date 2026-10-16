@@ -68,6 +68,16 @@ final class InstagramNavigationGuard: NSObject, WKNavigationDelegate, WKUIDelega
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default() // keeps you logged in between launches
 
+        // Identify as regular Safari so Instagram serves its current web app, not a legacy layout.
+        #if os(iOS)
+        let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+        configuration.applicationNameForUserAgent = isPhone
+            ? "Version/26.0 Mobile/15E148 Safari/604.1"
+            : "Version/26.0 Safari/605.1.15"
+        #else
+        configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
+        #endif
+
         // Play videos inside the page instead of jumping to fullscreen.
         #if canImport(UIKit)
         configuration.allowsInlineMediaPlayback = true
