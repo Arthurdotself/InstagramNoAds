@@ -137,13 +137,90 @@ final class InstagramNavigationGuard: NSObject, WKNavigationDelegate, WKUIDelega
         });
       }
 
+      // ---- Stories ----------------------------------------------------------
+      // The story viewer is not made of <article> posts, so it needs its own check:
+      // find the "Sponsored" label in the header area, cover the ad, mute it and press "Next".
+      var storyCover = null;
+      var lastSkip = 0;
+      var skipTries = 0;
+
+      function inStories() {
+        return location.pathname.indexOf('/stories/') === 0;
+      }
+
+      function storyHasAdLabel() {
+        var els = document.querySelectorAll('span, div');
+        for (var i = 0; i < els.length; i++) {
+          var el = els[i];
+          if (!isAdLabel(el)) continue;
+          var r = el.getBoundingClientRect();
+          // The label sits in the story header (top part of the screen).
+          if (r.height > 0 && r.top >= 0 && r.top < window.innerHeight * 0.25) return true;
+        }
+        return false;
+      }
+
+      function showCover(on) {
+        if (on && !storyCover) {
+          storyCover = document.createElement('div');
+          // pointer-events:none so you can still tap/swipe through it manually.
+          storyCover.style.cssText = 'position:fixed;inset:0;background:#000;z-index:2147483647;pointer-events:none;';
+          document.documentElement.appendChild(storyCover);
+        } else if (!on && storyCover) {
+          storyCover.remove();
+          storyCover = null;
+        }
+      }
+
+      function pressNext() {
+        var btn = document.querySelector(
+          '[aria-label="Next"], [aria-label="next"], [aria-label="\u0627\u0644\u062a\u0627\u0644\u064a"]'
+        );
+        if (btn) {
+          (btn.closest('button, [role="button"]') || btn).click();
+          return;
+        }
+        // Fallback: the story viewer also reacts to the right arrow key.
+        ['keydown', 'keyup'].forEach(function (type) {
+          var e = new KeyboardEvent(type, { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, which: 39, bubbles: true });
+          document.dispatchEvent(e);
+          window.dispatchEvent(e);
+        });
+      }
+
+      function scanStories() {
+        if (!inStories()) { showCover(false); skipTries = 0; return; }
+        if (!storyHasAdLabel()) { showCover(false); skipTries = 0; return; }
+
+        document.querySelectorAll('video').forEach(function (v) { v.muted = true; v.pause(); });
+        showCover(true);
+
+        // Skip it. Retry a few times, then stop so you are never locked out (the cover lets taps through).
+        var now = Date.now();
+        if (skipTries < 6 && now - lastSkip > 500) {
+          lastSkip = now;
+          skipTries++;
+          pressNext();
+        }
+      }
+
       var timer;
+      var storyTimer;
       new MutationObserver(function () {
         clearTimeout(timer);
         timer = setTimeout(scan, 200);
+        // Stories need a faster reaction so the ad is covered before it is seen.
+        if (inStories()) {
+          clearTimeout(storyTimer);
+          storyTimer = setTimeout(scanStories, 30);
+        }
       }).observe(document.documentElement, { childList: true, subtree: true });
 
+      // Safety net: the story label can change without a DOM mutation we notice.
+      setInterval(scanStories, 400);
+
       scan();
+      scanStories();
     })();
     """#
 
